@@ -1,0 +1,93 @@
+const express = require("express");
+const bcrypt = require("bcryptjs");
+const sqlite3 = require("sqlite3").verbose();
+const path = require("path");
+
+// ------------------------------
+// App + DB Setup
+// ------------------------------
+const app = express();
+
+// Use environment variable for database path, default to 'database.db'
+const dbPath = process.env.DB_PATH || "database.db";
+const db = new sqlite3.Database(dbPath);
+
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS messages (
+      name TEXT,
+      email TEXT,
+      message TEXT
+    )
+  `);
+});
+
+// ------------------------------
+// Admin Credentials from Environment Variables
+// ------------------------------
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@business.com";
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "123456";
+
+const USER = {
+  email: ADMIN_EMAIL,
+  passwordHash: bcrypt.hashSync(ADMIN_PASSWORD, 10)
+};
+
+// ------------------------------
+// Middleware
+// ------------------------------
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use(express.static("public"));
+
+// ------------------------------
+// Routes
+// ------------------------------
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "views", "index.html"));
+});
+
+app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "views", "login.html"));
+});
+
+app.post("/login", (req, res) => {
+  const { email, password } = req.body;
+  if (email === USER.email && bcrypt.compareSync(password, USER.passwordHash)) {
+    res.send("Login successful ✔️");
+  } else {
+    res.send("Invalid credentials ❌");
+  }
+});
+
+app.post("/contact", (req, res) => {
+  const { name, email, message } = req.body;
+  db.run(
+    "INSERT INTO messages VALUES (?, ?, ?)",
+    [name, email, message],
+    (err) => {
+      if (err) res.send("Error saving message ❌");
+      else res.send("Message saved successfully ✔️");
+    }
+  );
+});
+
+app.get("/admin", (req, res) => {
+  console.log("Admin page requested");
+  res.sendFile(path.join(__dirname, "views", "admin.html"));
+});
+
+app.get("/messages", (req, res) => {
+  db.all("SELECT * FROM messages", [], (err, rows) => {
+    if (err) res.status(500).json({ error: "Failed to load messages" });
+    else res.json(rows);
+  });
+});
+
+// ------------------------------
+// Start Server
+// ------------------------------
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server running at http://localhost:${PORT}`);
+});
